@@ -36,7 +36,7 @@ void
 periodic()
 {
   count = count + 1;
-  printf("alarm!\n");
+  printf("alarm! %d\n", count);
   sigreturn();
 }
 
@@ -66,6 +66,7 @@ test0()
 void __attribute__ ((noinline)) foo(int i, int *j) {
   if((i % 2500000) == 0) {
     write(2, ".", 1);
+    printf("%d %d %d ", i, j, *j);
   }
   *j += 1;
 }
