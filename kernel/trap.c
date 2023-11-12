@@ -65,6 +65,8 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 15 && !uvmcowfault(p->pagetable, r_stval())) {
+    // handle cow page fault success
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
