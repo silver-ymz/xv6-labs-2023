@@ -1,0 +1,3 @@
+> Why are there missing keys with 2 threads, but not with 1 thread? Identify a sequence of events with 2 threads that can lead to a key being missing.
+
+For the modification of each bucket, the update is done in 3 steps: (1) read the bucket, (2) modify the bucket, (3) write the bucket. If two threads are modifying the same bucket, it is possible that one thread reads the bucket, then the other thread reads the bucket, then the first thread writes the bucket, then the second thread writes the bucket. In this case, the second thread's update is lost.

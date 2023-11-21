@@ -24,3 +24,6 @@ barrier
 /lab-*.json
 .DS_Store
 *.dSYM
+compile_commands.json
+.cache
+.vscode
