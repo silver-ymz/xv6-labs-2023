@@ -38,3 +38,11 @@ struct devsw {
 extern struct devsw devsw[];
 
 #define CONSOLE 1
+
+struct mmap {
+  uint64 addr;
+  uint64 len;
+  int prot;
+  int flag;
+  struct file *file;
+};

@@ -5,6 +5,9 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -302,10 +305,14 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
-  // increment reference counts on open file descriptors.
-  for(i = 0; i < NOFILE; i++)
-    if(p->ofile[i])
+  for (i = 0; i < NOFILE; i++) {
+    // increment reference counts on open file descriptors.
+    if (p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
+    if (p->mmap[i])
+      if ((np->mmap[i] = mmapdup(p->mmap[i], np->pagetable)) == 0)
+        panic("fork: mmapdup");
+  }
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -351,12 +358,16 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
-  // Close all open files.
-  for(int fd = 0; fd < NOFILE; fd++){
+  for (int fd = 0; fd < NOFILE; fd++) {
+    // Close all open files.
     if(p->ofile[fd]){
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+    if (p->mmap[fd]) {
+      munmap(p->mmap[fd]->addr, p->mmap[fd]->len);
+      p->mmap[fd] = 0;
     }
   }
 

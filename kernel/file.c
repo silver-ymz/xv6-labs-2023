@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "fcntl.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -19,10 +20,16 @@ struct {
   struct file file[NFILE];
 } ftable;
 
+struct {
+  struct spinlock lock;
+  struct mmap mmap[NFILE];
+} mmaptable;
+
 void
 fileinit(void)
 {
   initlock(&ftable.lock, "ftable");
+  initlock(&mmaptable.lock, "mmaptable");
 }
 
 // Allocate a file structure.
@@ -180,3 +187,150 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+struct mmap* mmapalloc(struct file *f)
+{
+  struct mmap *m;
+  acquire(&mmaptable.lock);
+  for(m = mmaptable.mmap; m < mmaptable.mmap + NFILE; m++){
+    if (m->file == 0) {
+      m->file = f;
+      release(&mmaptable.lock);
+      filedup(f);
+      return m;
+    }
+  }
+  release(&mmaptable.lock);
+  return 0;
+}
+
+struct mmap *mmapdup(struct mmap *m2, pagetable_t pagetable) {
+  struct mmap *m;
+  acquire(&mmaptable.lock);
+  for(m = mmaptable.mmap; m < mmaptable.mmap + NFILE; m++){
+    if (m->file == 0) {
+      memmove(m, m2, sizeof(struct mmap));
+      if ((m->addr = uvmmmap(pagetable, m->addr, m->len, m->prot << 1)) != m2->addr) {
+        m->file = 0;
+        return 0;
+      }
+      release(&mmaptable.lock);
+      filedup(m->file);
+      return m;
+    }
+  }
+  release(&mmaptable.lock);
+  return 0;
+}
+
+void mmapclose(struct mmap *m) {
+  if(m->file == 0)
+    panic("mmapclose");
+  fileclose(m->file);
+  acquire(&mmaptable.lock);
+  m->file = 0;
+  release(&mmaptable.lock);
+}
+
+int munmap(uint64 addr, uint64 len) {
+  if (addr % PGSIZE != 0)
+    return -1;
+
+  if (len % PGSIZE != 0)
+    return -1;
+
+  for (int i = 0; i < NOFILE; i++) {
+    struct mmap *m;
+    if ((m = myproc()->mmap[i])) {
+      int mlen = m->len;
+      if (m->addr == addr) {
+        m->addr = addr + len;
+        m->len -= len;
+      } else if (m->addr + m->len == addr + len) {
+        m->len -= len;
+      } else {
+        continue;
+      }
+
+      if (m->flag & MAP_SHARED) {
+        begin_op();
+        ilock(m->file->ip);
+        for (int va = addr; va < addr + len; va += PGSIZE) {
+          int off = va - addr;
+          int len = (mlen - off) < PGSIZE ? (mlen - off) : PGSIZE;
+          pte_t *pte;
+          if (!(pte = walk(myproc()->pagetable, va, 0)))
+            panic("munmap: walk");
+          if (*pte & PTE_V) {
+            if (*pte & PTE_D) {
+              if (writei(m->file->ip, 1, va, off, len) != len)
+                panic("munmap: writei");
+            }
+            kfree((void *)PTE2PA(*pte));
+            *pte = 0;
+          }
+        }
+        iunlock(m->file->ip);
+        end_op();
+      } else {
+        for (int va = addr; va < addr + len; va += PGSIZE) {
+          pte_t *pte;
+          if (!(pte = walk(myproc()->pagetable, va, 0)))
+            panic("munmap: walk");
+          if (*pte & PTE_V) {
+            kfree((void *)PTE2PA(*pte));
+            *pte = 0;
+          }
+        }
+      }
+
+      if (m->len == 0) {
+        myproc()->mmap[i] = 0;
+        mmapclose(m);
+      }
+
+      return 0;
+    }
+  }
+  
+  return -1;
+}
+
+int mmap_fault_handler(struct proc *p, uint64 va) {
+  pte_t *pte;
+  char *mem;
+  uint flags;
+
+  va = PGROUNDDOWN(va);
+  if (va >= MAXVA)
+    return -1;
+  if ((pte = walk(p->pagetable, va, 0)) == 0)
+    return -1;
+  if ((*pte & PTE_V) || !(*pte & PTE_M))
+    return -1;
+  if (!(mem = kalloc()))
+    return -1;
+
+  for (int i = 0; i < NOFILE; i++) {
+    struct mmap *m;
+    if ((m = p->mmap[i]) && m->addr <= va && va < m->addr + m->len) {
+      int off = va - m->addr;
+      int len = (m->len - off) < PGSIZE ? (m->len - off) : PGSIZE;
+      ilock(m->file->ip);
+      int read_len = readi(m->file->ip, 0, (uint64)mem, off, len);
+      iunlock(m->file->ip);
+      if (read_len == -1 || read_len > len)
+        panic("mmap_fault_handler: readi failed");
+      while (read_len < PGSIZE) {
+        mem[read_len] = 0;
+        read_len++;
+      }
+      flags = PTE_FLAGS(*pte);
+      flags ^= PTE_V;
+      *pte = PA2PTE(mem) | flags;
+      return 0;
+    }
+  }
+
+  kfree(mem);
+  return -1;
+}

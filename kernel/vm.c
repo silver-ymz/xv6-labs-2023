@@ -125,6 +125,33 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
+uint64 uvmmmap(pagetable_t pagetable, uint64 addr, uint64 size, int perm)
+{
+  pte_t *pte;
+  uint64 va;
+
+  size = PGROUNDUP(size);
+  for (va = addr; va < MAXVA; va += PGSIZE) {
+    for (uint64 i = 0; i < size; i += PGSIZE) {
+      pte = walk(pagetable, va + i, 0);
+      if (pte != 0) {
+        va += i;
+        goto next_loop;
+      }
+    }
+    goto found;
+  next_loop:;
+  }
+  return 0;
+
+found:
+  for (uint64 i = 0; i < size; i += PGSIZE) {
+    pte = walk(pagetable, va + i, 1);
+    *pte = perm | PTE_U | PTE_M;
+  }
+  return va;
+}
+
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -286,7 +313,7 @@ freewalk(pagetable_t pagetable)
       uint64 child = PTE2PA(pte);
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
-    } else if(pte & PTE_V){
+    } else if (pte & PTE_V) {
       panic("freewalk: leaf");
     }
   }

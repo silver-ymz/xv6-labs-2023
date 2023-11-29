@@ -503,3 +503,67 @@ sys_pipe(void)
   }
   return 0;
 }
+
+static int
+mdalloc(struct mmap *m)
+{
+  int md;
+  struct proc *p = myproc();
+
+  for(md = 0; md < NOFILE; md++){
+    if(p->mmap[md] == 0){
+      p->mmap[md] = m;
+      return md;
+    }
+  }
+  return -1;
+}
+
+uint64 sys_mmap(void) {
+  uint64 addr, len;
+  int prot, flag, fd, md;
+  struct file *f;
+  struct mmap *m;
+  struct proc *p = myproc();
+
+  if (argfd(4, &fd, &f) < 0)
+    return -1;
+  argaddr(0, &addr);
+  argaddr(1, &len);
+  argint(2, &prot);
+  argint(3, &flag);
+
+  if (!f->readable)
+    return -1;
+  if ((flag & MAP_PRIVATE) && (flag & MAP_SHARED))
+    return -1;
+  if ((flag & MAP_SHARED) && (prot & PROT_WRITE) && !f->writable)
+    return -1;
+  if ((m = mmapalloc(f)) == 0)
+    return -1;
+  if ((md = mdalloc(m)) < 0) {
+    mmapclose(m);
+    return -1;
+  }
+
+  if ((addr = uvmmmap(p->pagetable, addr, len, prot << 1)) == 0) {
+    p->mmap[md] = 0;
+    mmapclose(m);
+    return -1;
+  }
+
+  m->addr = addr;
+  m->len = len;
+  m->prot = prot;
+  m->flag = flag;
+  return addr;
+}
+
+uint64 sys_munmap(void) {
+  uint64 addr, len;
+
+  argaddr(0, &addr);
+  argaddr(1, &len);
+
+  return munmap(addr, len);
+}

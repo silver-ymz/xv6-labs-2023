@@ -40,7 +40,12 @@ struct file*    filedup(struct file*);
 void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
-int             filewrite(struct file*, uint64, int n);
+int             filewrite(struct file *, uint64, int n);
+struct mmap     *mmapalloc(struct file *);
+struct mmap     *mmapdup(struct mmap *m2, pagetable_t pagetable);
+void            mmapclose(struct mmap *);
+int             munmap(uint64 addr, uint64 len);
+int             mmap_fault_handler(struct proc *p, uint64 addr);
 
 // fs.c
 void            fsinit(int);
@@ -184,6 +189,7 @@ void            uvmunmap(pagetable_t, uint64, uint64, int);
 void            uvmclear(pagetable_t, uint64);
 pte_t *         walk(pagetable_t, uint64, int);
 uint64          walkaddr(pagetable_t, uint64);
+uint64          uvmmmap(pagetable_t pagetable, uint64 addr, uint64 size, int perm);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
