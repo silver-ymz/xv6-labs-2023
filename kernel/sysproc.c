@@ -100,16 +100,16 @@ uint64 sys_sigalarm(void) {
   struct proc *p = myproc();
 
   argint(0, &ticks);
-  argaddr(0, &handler_vaddr);
-  p->sigalarm.interval = ticks;
-  p->sigalarm.handler = handler_vaddr;
-  p->sigalarm.ticks = 0;
+  argaddr(1, &handler_vaddr);
+  p->sigalarm->interval = ticks;
+  p->sigalarm->handler = handler_vaddr;
+  p->sigalarm->ticks = 0;
   return 0;
 }
 
 uint64 sys_sigreturn(void) {
   struct proc *p = myproc();
-  *p->trapframe = *p->sigalarm.saved_trapframe;
-  p->sigalarm.running = 0;
+  *p->trapframe = p->sigalarm->saved_trapframe;
+  p->sigalarm->running = 0;
   return p->trapframe->a0;
 }

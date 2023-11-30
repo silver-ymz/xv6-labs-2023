@@ -82,7 +82,7 @@ struct trapframe {
 struct sigalarm {
   int interval, ticks, running;
   uint64 handler;
-  struct trapframe *saved_trapframe;
+  struct trapframe saved_trapframe;
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -110,5 +110,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  struct sigalarm sigalarm;    // Alarm clock
+  struct sigalarm *sigalarm;    // Alarm clock
 };
